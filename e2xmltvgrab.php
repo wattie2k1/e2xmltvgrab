@@ -1,4 +1,20 @@
 <?php
+stream_filter_register('xmlutf8', 'ValidUTF8XMLFilter');
+
+class ValidUTF8XMLFilter extends php_user_filter
+{
+    protected static $pattern = '/[^\x{0009}\x{000a}\x{000d}\x{0020}-\x{D7FF}\x{E000}-\x{FFFD}]+/u';
+
+    function filter($in, $out, &$consumed, $closing)
+    {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            $bucket->data = preg_replace(self::$pattern, '', $bucket->data);
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+        return PSFS_PASS_ON;
+    }
+}
 
 if (!file_exists("config.inc.php")) {
   exit("Failed to open config file!\n");
@@ -6,7 +22,7 @@ if (!file_exists("config.inc.php")) {
 else {
   include ("config.inc.php");    
 }
-  
+ 
 $channels = new XMLReader;
 if (!$channels->open("channels.xml")) {
     die("Failed to open 'channels.xml'");
@@ -37,19 +53,19 @@ while($channels->read()) {
     $xw->text($lang);
     $xw->endAttribute();
     $xw->text($channels->getAttribute('name'));
-    $xw->endElement(); 
+    $xw->endElement();
 
     $xw->startElement('url');
     $xw->text($channels->getAttribute('url'));
-    $xw->endElement(); 
+    $xw->endElement();
 
     $xw->startElement('icon');
     $xw->startAttribute('src');
     $xw->text('http://'.$e2ip.'/picon/'.str_replace(":", "_", rtrim($channels->getAttribute('e2id'), ":")).'.png');
     $xw->endAttribute();
-    $xw->endElement(); 
+    $xw->endElement();
     
-    $xw->endElement();         
+    $xw->endElement();        
     
     echo "Adding station - ".$channels->getAttribute('name')." - to XMLTV\n";
     flush();
@@ -65,10 +81,11 @@ if (!$channels->open("channels.xml")) {
 while($channels->read()) {
   if ($channels->nodeType == XMLReader::ELEMENT && $channels->name == 'channel') {
       
-    $programme = simplexml_load_file("http://".$e2ip."/web/epgservice?sRef=".$channels->getAttribute('e2id')); 
+    $programme = simplexml_load_file("php://filter/read=xmlutf8/resource=http://".$e2ip."/web/epgservice?sRef=".$channels->getAttribute('e2id')); 
    
     echo "\n\nUpdating epg data for channel: ".$channels->getAttribute('name')."\n";
     flush();
+    
     foreach( $programme->xpath( '//e2event' ) as $node ) {
       echo "o";
       flush();
@@ -106,8 +123,9 @@ while($channels->read()) {
       $xw->endAttribute();
       $xw->text($node->e2eventdescription);
       $xw->endElement();
-                  
       $xw->endElement();
+      
+      $dupe_start = $node->e2eventstart;
     }
   }
 }
